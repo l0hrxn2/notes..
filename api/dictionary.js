@@ -46,7 +46,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    const url = `https://en.dict.naver.com/api3/enko/search?query=${encodeURIComponent(word)}&range=word`;
+    const url = `https://en.dict.naver.com/api3/enko/search?query=${encodeURIComponent(word)}`;
     const naverRes = await fetch(url, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36',
@@ -68,16 +68,21 @@ export default async function handler(req, res) {
       return;
     }
 
-    // Prefer an exact-match headword over partial/related matches.
-    const entry = items.find(it => (it.expEntry || '').toLowerCase() === word) || items[0];
-    const lines = [];
+    // The WORD section mixes exact word entries with idioms/phrases that
+    // merely contain the query (e.g. "like a dose of salts" for "dose").
+    // exactMatch / handleEntry tell us which one is the real headword.
+    const entry =
+      items.find(it => it.exactMatch === true && it.handleEntry?.toLowerCase() === word) ||
+      items.find(it => it.handleEntry?.toLowerCase() === word) ||
+      items[0];
 
+    const lines = [];
     for (const group of entry.meansCollector || []) {
       const posKo = group.partOfSpeech || '';
       const abbr = POS_MAP[posKo] || posKo.slice(0, 2) || '';
-      for (const m of (group.meansList || []).slice(0, 3)) {
-        const text = stripHtml(m.mean);
-        if (text) lines.push(`${abbr}. ${text}`);
+      for (const m of (group.means || []).slice(0, 3)) {
+        const text = stripHtml(m.value);
+        if (text) lines.push(abbr ? `${abbr}. ${text}` : text);
       }
     }
 
