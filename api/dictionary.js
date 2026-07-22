@@ -20,7 +20,7 @@
 //
 // If this ever breaks or gets blocked, the Oxford-API version from before
 // (api/dictionary.js with OXFORD_APP_ID/OXFORD_APP_KEY) is the safer fallback.
-
+ 
 const POS_MAP = {
   '명사': 'n',
   '동사': 'v',
@@ -33,18 +33,18 @@ const POS_MAP = {
   '조동사': 'aux',
   '관사': 'art',
 };
-
+ 
 function stripHtml(s) {
   return (s || '').replace(/<[^>]*>/g, '').trim();
 }
-
+ 
 export default async function handler(req, res) {
   const word = (req.query.word || '').toString().trim().toLowerCase();
   if (!word) {
     res.status(400).json({ error: 'word query param is required' });
     return;
   }
-
+ 
   try {
     const url = `https://en.dict.naver.com/api3/enko/search?query=${encodeURIComponent(word)}`;
     const naverRes = await fetch(url, {
@@ -54,20 +54,20 @@ export default async function handler(req, res) {
         'Accept': 'application/json',
       },
     });
-
+ 
     if (!naverRes.ok) {
       res.status(naverRes.status).json({ error: `naver dictionary error (${naverRes.status})` });
       return;
     }
-
+ 
     const data = await naverRes.json();
     const items = data?.searchResultMap?.searchResultListMap?.WORD?.items || [];
-
+ 
     if (items.length === 0) {
       res.status(404).json({ error: 'not found', meaning: '' });
       return;
     }
-
+ 
     // The WORD section mixes exact word entries with idioms/phrases that
     // merely contain the query (e.g. "like a dose of salts" for "dose").
     // exactMatch / handleEntry tell us which one is the real headword.
@@ -75,7 +75,7 @@ export default async function handler(req, res) {
       items.find(it => it.exactMatch === true && it.handleEntry?.toLowerCase() === word) ||
       items.find(it => it.handleEntry?.toLowerCase() === word) ||
       items[0];
-
+ 
     const lines = [];
     for (const group of entry.meansCollector || []) {
       const posKo = group.partOfSpeech || '';
@@ -85,10 +85,19 @@ export default async function handler(req, res) {
         if (text) lines.push(abbr ? `${abbr}. ${text}` : text);
       }
     }
-
-    res.status(200).json({ meaning: lines.join('\n') });
+ 
+    // If we fell back to a non-exact entry, Naver's closest-match headword
+    // (handleEntry) often IS the correctly-spelled word for a typo (e.g.
+    // "appla" -> "apple"). Only treat it as a correction when it's a single
+    // word, not an idiom/phrase, and actually differs from what was typed —
+    // otherwise this would misfire on idiom fallbacks like "a dose of ~".
+    const rawHeadword = (entry.handleEntry || '').toLowerCase().trim();
+    const correctedWord = (rawHeadword && !rawHeadword.includes(' ') && rawHeadword !== word) ? rawHeadword : null;
+ 
+    res.status(200).json({ meaning: lines.join('\n'), correctedWord });
   } catch (err) {
     console.error('naver dictionary proxy failed', err);
     res.status(500).json({ error: 'proxy request failed' });
   }
 }
+ 
