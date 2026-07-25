@@ -943,6 +943,7 @@ let learnState = {
   spellStatus: null,     // null | correct | wrong | revealed
   queue: [],
   total: 0,
+  lastAutoSpokenId: null, // avoids re-playing audio on every re-render of the same word
 };
 
 function normalizeSpell(s){ return s.toLowerCase().trim().replace(/[^a-z]/g,''); }
@@ -967,6 +968,7 @@ function buildLearnQueue(){
   learnState.total = learnState.queue.length;
   learnState.flipped = false;
   learnState.spellStatus = null;
+  learnState.lastAutoSpokenId = null;
 }
 function setLearnMode(m){
   learnState.studyMode = m;
@@ -1107,6 +1109,14 @@ function renderStage(){
     const knownBtn = document.getElementById('knownBtn'), unknownBtn = document.getElementById('unknownBtn');
     if(knownBtn) knownBtn.addEventListener('click', (e)=>{ e.stopPropagation(); handleKnown(row); });
     if(unknownBtn) unknownBtn.addEventListener('click', (e)=>{ e.stopPropagation(); handleUnknown(row); });
+
+    // Auto-play pronunciation once per new word, only on the front (word) side
+    // — not on every re-render (e.g. flipping back and forth, or toggling
+    // the ribbon) so it doesn't replay annoyingly.
+    if(!learnState.flipped && learnState.lastAutoSpokenId !== row.id){
+      learnState.lastAutoSpokenId = row.id;
+      speak(row.word, document.getElementById('speakBtn'));
+    }
   }
   renderProgress();
 }
